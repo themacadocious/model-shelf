@@ -1,0 +1,24 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Model Shelf settings</title>
+<style>
+ body{font:14px/1.5 system-ui,sans-serif;max-width:540px;margin:40px auto;padding:0 16px;color-scheme:light dark}
+ label{display:block;margin:16px 0 4px;font-weight:600}
+ input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:7px;font:inherit}
+ .row{display:flex;gap:8px;align-items:center;margin-top:14px;font-weight:400}
+ button{margin-top:18px;padding:8px 18px;font:inherit}
+ #status{margin-left:12px}
+ .muted{color:#777;font-size:13px}
+</style></head><body>
+<h1>Model Shelf</h1>
+<label>Shelf endpoint</label>
+<input type="text" id="endpoint" placeholder="https://shelf.example.com">
+<div class="muted">Where your shelfd service is reachable. Firefox will ask permission for this host when you save.</div>
+<label>API token</label>
+<input type="password" id="token">
+<div class="muted">The <code>SHELF_API_TOKEN</code> from your server's <code>shelfd.env</code>.</div>
+<label class="row"><input type="checkbox" id="fetchFiles"> download model files by default</label>
+<button id="save">Save</button><button id="test">Test connection</button><span id="status"></span>
+<h2 style="margin-top:28px;font-size:16px">Site access</h2>
+<div class="muted">Firefox MV3 does not grant host permissions automatically — the extension
+cannot read a model page or download its files until you allow the sites here.</div>
+<button id="grant">Grant site access</button><span id="perm"></span>
+<script src="options.js"></script></body></html>

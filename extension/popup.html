@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <div id="app">
+    <header>
+      <span id="src" class="pill">…</span>
+      <a id="shelf" href="#" target="_blank" title="Open the shelf">shelf ↗</a>
+    </header>
+
+    <div id="loading" class="muted">Reading the page…</div>
+
+    <main id="body" hidden>
+      <div id="existing" class="note" hidden></div>
+      <h1 id="title">—</h1>
+      <div id="sub" class="muted"></div>
+      <div id="warn" class="warn" hidden></div>
+
+      <label>Tags</label>
+      <div id="tags" class="chips"></div>
+      <input id="tagAdd" placeholder="add a tag and press Enter" autocomplete="off">
+
+      <label>Projects</label>
+      <div id="projects" class="chips"></div>
+      <input id="projAdd" placeholder="add a project and press Enter" autocomplete="off">
+
+      <label for="status">Status</label>
+      <select id="status"></select>
+
+      <label for="note">Note <span class="muted">(optional)</span></label>
+      <textarea id="note" rows="2" placeholder="why you saved it, print settings, what it's for"></textarea>
+
+      <label class="row"><input type="checkbox" id="withFiles" checked> download the model files too</label>
+
+      <div class="actions">
+        <button id="save" class="primary">Save to shelf</button>
+      </div>
+      <div id="result" class="result" hidden></div>
+    </main>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

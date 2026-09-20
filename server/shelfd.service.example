@@ -1,0 +1,23 @@
+[Unit]
+Description=model-shelf capture service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shelfd
+Group=shelfd
+EnvironmentFile=/etc/shelfd/shelfd.env
+WorkingDirectory=/var/lib/shelfd
+ExecStart=/opt/shelfd/venv/bin/python /opt/shelfd/shelfd.py
+Restart=always
+RestartSec=5
+# git writes only under /var/lib/shelfd; /etc/shelfd stays read-only on purpose
+ProtectSystem=strict
+ReadWritePaths=/var/lib/shelfd
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
