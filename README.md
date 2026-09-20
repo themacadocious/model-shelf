@@ -17,6 +17,15 @@ browser that is already signed in.
 Built against a self-hosted [Forgejo](https://forgejo.org/), but nothing depends
 on that — any Git remote that speaks HTTPS and LFS will do.
 
+## How this was built
+
+**This project was written by an AI.** The code, documentation and commit
+messages were produced by Claude (Anthropic) in an interactive session,
+directed and tested by the repository owner. It runs in production on that
+homelab — the site adapters were verified against live pages and the capture
+path tested end to end — but it has not had independent human code review.
+Read it with that in mind.
+
 ## Why a shelf and not bookmarks
 
 A bookmark rots. The model gets delisted, the author deletes their account, the
