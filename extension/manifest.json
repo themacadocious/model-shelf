@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Model Shelf",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Save 3D model projects \u2014 page, metadata, licence and files \u2014 into Forgejo.",
   "browser_specific_settings": {
     "gecko": {
