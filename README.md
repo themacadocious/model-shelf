@@ -91,11 +91,38 @@ SHELF_WORKDIR=/var/lib/shelfd/repo
 SHELF_PORT=8710
 ```
 
+Optionally, for **STEP conversion**, add `SHELF_STL2STEP` (see below).
+
 Then `systemctl enable --now shelfd`. On first run it clones the repo, writes
 `.gitattributes` for LFS, seeds `taxonomy.yml` and pushes an initial commit.
 
 Put it behind a reverse proxy with TLS. Firefox will not send a bearer token to
 an untrusted origin, and you do not want this on plain HTTP anyway.
+
+### Optional: convert meshes to STEP
+
+With [cad-transmogrifier](https://github.com/themacadocious/cad-transmogrifier)
+installed, the popup offers to turn a model's STL and 3MF files into editable
+STEP solids once they are on the shelf, including the meshes inside a
+downloaded zip. Pick some or all; each one lands in `files/step/` next to the
+originals, listed in `model.yaml` with `converted_from` naming its mesh, and
+is committed like any other save.
+
+It runs as a subprocess in its own venv, so OpenCASCADE never enters shelfd's.
+Install it outside `/home`: the unit file sets `ProtectHome=true`.
+
+```bash
+git clone https://github.com/themacadocious/cad-transmogrifier.git /opt/stl2step
+python3 -m venv /opt/stl2step/.venv
+/opt/stl2step/.venv/bin/pip install -r /opt/stl2step/requirements.txt
+```
+
+```ini
+SHELF_STL2STEP=/opt/stl2step/stl2step
+SHELF_CONVERT_TIMEOUT=600   # seconds per file; big organic meshes are slow
+```
+
+Without `SHELF_STL2STEP` the option simply does not appear.
 
 ### 2. The extension
 
@@ -235,6 +262,17 @@ and `/ext/*`.
 | `GET /api/lookup?source=&id=` | is this already on the shelf? |
 | `POST /api/save` | multipart: `payload` JSON + `file*` / `image*` parts |
 | `POST /api/annotate` | change tags/projects/status, or append to NOTES.md |
+| `GET /api/convertible?source=&id=` | the model's STL/3MF files (zip contents too) and any STEP already made |
+| `POST /api/convert` | JSON `source`, `id`, `files`: `"all"` or a list from `/api/convertible` |
+
+## Tests
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r server/requirements-dev.txt
+.venv/bin/python -m pytest server/tests
+# also run one conversion through the real converter:
+SHELF_TEST_STL2STEP=/opt/stl2step/stl2step .venv/bin/python -m pytest server/tests
+```
 
 ## Operating it
 

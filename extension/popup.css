@@ -19,3 +19,5 @@ button.primary:disabled { opacity:.55; cursor:default; }
 .warn { background:#fff4e0; color:#7a4b00; } .note { background:var(--chip); }
 .result { background:#e8f5e9; color:#1b5e20; } .result.err { background:#fdecea; color:#8a1c12; }
 @media (prefers-color-scheme: dark) { .warn{background:#3a2e12;color:#f0c674} .result{background:#16301a;color:#a5d6a7} .result.err{background:#3a1a16;color:#f0a09a} }
+#convList label.row { margin-top:4px; }
+#convList .muted { margin-left:auto; }

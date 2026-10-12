@@ -221,6 +221,11 @@ browser.runtime.onMessage.addListener(async (msg) => {
       case "taxonomy":  return { ok: true, taxonomy: await api("/api/taxonomy") };
       case "save":      return { ok: true, result: await save(msg) };
       case "annotate":  return { ok: true, result: await api("/api/annotate", { method: "POST", json: msg.body }) };
+      case "convertible": return { ok: true, result: await api(
+                          `/api/convertible?source=${encodeURIComponent(msg.source)}&id=${encodeURIComponent(msg.id)}`) };
+      // can take minutes; running here means closing the popup does not cancel it
+      case "convert":   return { ok: true, result: await api("/api/convert", {
+                          method: "POST", json: { source: msg.source, id: msg.id, files: msg.files } }) };
       case "health":    return { ok: true, health: await api("/api/health") };
       default:          return { ok: false, error: `unknown message ${msg.type}` };
     }

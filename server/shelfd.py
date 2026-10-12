@@ -8,13 +8,16 @@ images, and the model files themselves via Git LFS.
 """
 
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import unicodedata
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,6 +38,11 @@ MAX_UPLOAD_MB = int(os.environ.get("SHELF_MAX_UPLOAD_MB", "1024"))
 # Firefox's updater does not carry our bearer token; the packages are signed,
 # so integrity does not depend on this being private.
 EXT_DIR = Path(os.environ.get("SHELF_EXT_DIR", "/var/lib/shelfd/ext"))
+# Mesh -> STEP conversion via cad-transmogrifier's `stl2step` launcher. It runs
+# as a subprocess in its own venv: OpenCASCADE is a heavy dependency shelfd
+# itself has no need for. Unset means the feature is off.
+STL2STEP = os.environ.get("SHELF_STL2STEP", "")
+CONVERT_TIMEOUT = int(os.environ.get("SHELF_CONVERT_TIMEOUT", "600"))  # per file
 
 # Extensions that go to LFS. Images stay in plain git so Forgejo renders them,
 # and so a `git clone` of just the metadata is still browsable.
@@ -54,6 +62,10 @@ SOURCES = {
     "github": "GitHub",
     "web": "Web",
 }
+
+# what stl2step reads; converted files land in files/step/
+MESH_SUFFIXES = {".stl", ".3mf"}
+STEP_DIR = "files/step"
 
 STATUSES = ["wishlist", "queued", "printed", "in-use", "failed", "reference"]
 
@@ -151,6 +163,10 @@ def ensure_repo():
     git("config", "user.email", GIT_EMAIL)
     git("config", "lfs.fetchexclude", "*")
     git("config", "remote.origin.url", authed_remote())
+    # the LFS filters are per clone unless installed globally; without them a
+    # re-cloned shelf would commit meshes and STEP files as plain blobs
+    if git("config", "filter.lfs.clean", check=False).returncode != 0:
+        git("lfs", "install", "--local")
     # empty repo: make the first commit
     if git("rev-parse", "--verify", "HEAD", check=False).returncode != 0:
         seed_repo()
@@ -163,8 +179,6 @@ def seed_repo():
         yaml.safe_dump(TAXONOMY_SEED, sort_keys=False, allow_unicode=True))
     (WORKDIR / "models" / ".gitkeep").write_text("")
     (WORKDIR / "README.md").write_text(SHELF_README)
-    subprocess.run(["git", "lfs", "install", "--local"], cwd=WORKDIR,
-                   check=True, capture_output=True, text=True)
     reindex()
     git("add", "-A")
     git("commit", "-m", "Initialise model shelf")
@@ -333,6 +347,106 @@ def reindex():
         (WORKDIR / fname).write_text("\n".join(out) + "\n")
 
 
+# ------------------------------------------------------------- STEP conversion
+#
+# A conversion target is a mesh file in files/, or a mesh inside a zip there
+# (Thingiverse only hands out zips), named "files/x.zip::inner/part.stl". The
+# result goes to files/step/<name>.step and is listed in model.yaml's files
+# with `converted_from` pointing back at the target.
+
+
+def zip_meshes(data: bytes) -> list[str]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = zf.namelist()
+    except (zipfile.BadZipFile, OSError):
+        return []
+    return sorted(n for n in names
+                  if Path(n).suffix.lower() in MESH_SUFFIXES
+                  and not n.endswith("/") and "__MACOSX" not in n
+                  and not Path(n).name.startswith("."))
+
+
+LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
+
+
+def file_bytes(path: Path) -> bytes:
+    """The real contents of a file in the working copy. The clone never smudges
+    LFS files, so anything not written by this process is a pointer: fetch just
+    that object and read it from the LFS store, leaving the work tree alone."""
+    data = path.read_bytes()
+    if not data.startswith(LFS_POINTER):
+        return data
+    m = re.search(rb"^oid sha256:([0-9a-f]{64})$", data, re.M)
+    if not m:
+        raise ValueError(f"{rel(path)}: unreadable LFS pointer")
+    oid = m.group(1).decode()
+    obj = WORKDIR / ".git" / "lfs" / "objects" / oid[:2] / oid[2:4] / oid
+    if not obj.exists():
+        git("-c", "lfs.fetchexclude=", "lfs", "fetch", "origin", "-I", rel(path))
+    if not obj.exists():
+        raise ValueError(f"{rel(path)}: LFS object {oid[:12]} not on the server")
+    return obj.read_bytes()
+
+
+def convertible(d: Path, rec: dict) -> list[dict]:
+    """Every mesh this model has, and the STEP file already made from it, if any.
+    Zips saved before zip contents were recorded are opened here instead."""
+    done = {f["converted_from"]: f["path"] for f in rec.get("files", [])
+            if f.get("converted_from")}
+    out = []
+    for f in rec.get("files", []):
+        if f.get("converted_from"):
+            continue
+        suffix = Path(f["path"]).suffix.lower()
+        if suffix in MESH_SUFFIXES:
+            names = [f["path"]]
+        elif suffix == ".zip":
+            meshes = f.get("meshes")
+            if meshes is None:
+                try:
+                    meshes = zip_meshes(file_bytes(d / f["path"]))
+                except (OSError, ValueError, subprocess.CalledProcessError):
+                    meshes = []
+            names = [f"{f['path']}::{m}" for m in meshes]
+        else:
+            continue
+        out += [{"source": n, "name": n.split("::")[-1].rsplit("/", 1)[-1],
+                 "step": done.get(n)} for n in names]
+    return out
+
+
+def mesh_bytes(d: Path, target: str) -> bytes:
+    path, _, member = target.partition("::")
+    data = file_bytes(d / path)
+    if not member:
+        return data
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        return zf.read(member)
+
+
+def step_name(target: str, taken: set[str]) -> str:
+    stem = Path(safe_name(target.split("::")[-1])).stem or "part"
+    name, n = f"{stem}.step", 2
+    while name in taken:
+        name, n = f"{stem}-{n}.step", n + 1
+    return name
+
+
+def run_stl2step(src: Path, out: Path) -> tuple[bool, str]:
+    try:
+        p = subprocess.run([STL2STEP, str(src), "-o", str(out)],
+                           capture_output=True, text=True, timeout=CONVERT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return False, f"gave up after {CONVERT_TIMEOUT} s"
+    except OSError as exc:
+        return False, f"could not run stl2step: {exc}"
+    log = (p.stderr or "").strip()
+    if p.returncode != 0 or not out.is_file() or not out.stat().st_size:
+        return False, log[-600:] or f"stl2step exited {p.returncode}"
+    return True, log[-600:]
+
+
 # ------------------------------------------------------------------------- auth
 
 
@@ -377,7 +491,8 @@ def ext(name):
 
 @app.get("/api/health")
 def health():
-    return jsonify(ok=True, service="shelfd", repo=REPO_URL)
+    return jsonify(ok=True, service="shelfd", repo=REPO_URL,
+                   convert_available=bool(STL2STEP))
 
 
 @app.get("/api/taxonomy")
@@ -495,6 +610,8 @@ def save():
                 else:
                     entry["lfs"] = dest.suffix.lower() in LFS_SUFFIXES
                     entry["source_url"] = meta.get("source_url")
+                    if dest.suffix.lower() == ".zip":
+                        entry["meshes"] = zip_meshes(data)
                     files = [f for f in files if f["path"] != entry["path"]]
                     files.append(entry)
 
@@ -513,14 +630,122 @@ def save():
         git("add", "-A")
         if git("diff", "--cached", "--quiet", check=False).returncode == 0:
             return jsonify(ok=True, changed=False, path=rel(d),
-                           url=web_url(d), files=len(rec["files"]))
+                           url=web_url(d), files=len(rec["files"]),
+                           convert_available=bool(STL2STEP),
+                           convertible=convertible(d, rec))
         git("commit", "-m", msg)
         push = git("push", "origin", "HEAD:main", check=False)
         if push.returncode != 0:
             return jsonify(error="push failed", detail=push.stderr[-2000:]), 500
 
+        conv = convertible(d, rec)
+
     return jsonify(ok=True, changed=True, path=rel(d), url=web_url(d),
-                   files=len(rec["files"]), created=fresh)
+                   files=len(rec["files"]), created=fresh,
+                   convert_available=bool(STL2STEP), convertible=conv)
+
+
+@app.get("/api/convertible")
+def convertible_route():
+    source, mid = request.args.get("source", ""), str(request.args.get("id", ""))
+    with _git_lock:
+        ensure_repo()
+        d = find_existing(source, mid) if source and mid else None
+        if not d:
+            return jsonify(error="not found"), 404
+        items = convertible(d, load_model(d))
+    return jsonify(available=bool(STL2STEP), files=items)
+
+
+@app.post("/api/convert")
+def convert():
+    """Convert some or all of a saved model's meshes to STEP and commit them.
+    `files` is "all" or a list of sources as /api/convertible names them.
+    The converter runs outside the git lock: a big mesh can take a minute."""
+    if not STL2STEP:
+        return jsonify(error="STEP conversion is not set up (SHELF_STL2STEP)"), 501
+    body = request.get_json(force=True, silent=True) or {}
+    source, mid = body.get("source"), str(body.get("id", ""))
+    wanted = body.get("files", "all")
+    if wanted != "all" and not (isinstance(wanted, list)
+                                and all(isinstance(t, str) for t in wanted)):
+        return jsonify(error='files must be "all" or a list of names'), 400
+
+    with tempfile.TemporaryDirectory(prefix="shelfd-step-") as tmp:
+        tmp = Path(tmp)
+        results, jobs = [], []
+        with _git_lock:
+            ensure_repo()
+            sync()
+            d = find_existing(source, mid)
+            if not d:
+                return jsonify(error="not found"), 404
+            known = [c["source"] for c in convertible(d, load_model(d))]
+            targets = known if wanted == "all" else [t for t in wanted if t in known]
+            results += [{"source": t, "ok": False, "error": "not a mesh in this model"}
+                        for t in ([] if wanted == "all" else wanted) if t not in known]
+            for i, t in enumerate(targets):
+                src = tmp / str(i) / safe_name(t.split("::")[-1])
+                src.parent.mkdir()
+                try:
+                    src.write_bytes(mesh_bytes(d, t))
+                except (OSError, ValueError, KeyError, zipfile.BadZipFile,
+                        subprocess.CalledProcessError) as exc:
+                    results.append({"source": t, "ok": False, "error": f"could not read: {exc}"})
+                    continue
+                jobs.append((t, src))
+
+        done = []
+        for t, src in jobs:
+            out = src.with_suffix(".step")
+            ok, log = run_stl2step(src, out)
+            results.append({"source": t, "ok": ok, ("log" if ok else "error"): log})
+            if ok:
+                done.append((t, out))
+
+        if not results:
+            return jsonify(error="no STL or 3MF files to convert"), 400
+        if not done:
+            return jsonify(ok=True, changed=False, results=results)
+
+        with _git_lock:
+            sync()
+            d = find_existing(source, mid)
+            if not d:
+                return jsonify(error="model vanished while converting"), 409
+            rec = load_model(d)
+            files = rec.get("files", [])
+            (d / STEP_DIR).mkdir(parents=True, exist_ok=True)
+            for t, out in done:
+                old = next((f for f in files if f.get("converted_from") == t), None)
+                if old:
+                    path = old["path"]
+                else:
+                    taken = {Path(f["path"]).name for f in files
+                             if f["path"].startswith(STEP_DIR + "/")}
+                    path = f"{STEP_DIR}/{step_name(t, taken)}"
+                data = out.read_bytes()
+                (d / path).write_bytes(data)
+                files = [f for f in files if f["path"] != path]
+                files.append({"path": path, "bytes": len(data), "sha256": sha256_bytes(data),
+                              "lfs": True, "converted_from": t, "converted": now_iso()})
+                next(r for r in results if r["source"] == t)["path"] = path
+            rec["files"] = sorted(files, key=lambda f: f["path"])
+            rec["updated"] = now_iso()
+            write_model(d, rec)
+            reindex()
+            git("add", "-A")
+            if git("diff", "--cached", "--quiet", check=False).returncode == 0:
+                return jsonify(ok=True, changed=False, results=results, path=rel(d),
+                               url=web_url(d))
+            made = [f"{r['source']} -> {r['path']}" for r in results if r.get("path")]
+            git("commit", "-m", f"Convert to STEP: {rec.get('title', d.name)}\n\n"
+                + "\n".join(made))
+            push = git("push", "origin", "HEAD:main", check=False)
+            if push.returncode != 0:
+                return jsonify(error="push failed", detail=push.stderr[-2000:]), 500
+
+    return jsonify(ok=True, changed=True, results=results, path=rel(d), url=web_url(d))
 
 
 @app.post("/api/annotate")
