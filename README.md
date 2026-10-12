@@ -112,13 +112,13 @@ It runs as a subprocess in its own venv, so OpenCASCADE never enters shelfd's.
 Install it outside `/home`: the unit file sets `ProtectHome=true`.
 
 ```bash
-git clone https://github.com/themacadocious/cad-transmogrifier.git /opt/stl2step
-python3 -m venv /opt/stl2step/.venv
-/opt/stl2step/.venv/bin/pip install -r /opt/stl2step/requirements.txt
+git clone https://github.com/themacadocious/cad-transmogrifier.git /opt/cad-transmogrifier
+python3 -m venv /opt/cad-transmogrifier/.venv
+/opt/cad-transmogrifier/.venv/bin/pip install -r /opt/cad-transmogrifier/requirements.txt
 ```
 
 ```ini
-SHELF_STL2STEP=/opt/stl2step/stl2step
+SHELF_STL2STEP=/opt/cad-transmogrifier/transmogrify
 SHELF_CONVERT_TIMEOUT=600   # seconds per file; big organic meshes are slow
 ```
 
@@ -271,7 +271,7 @@ and `/ext/*`.
 python3 -m venv .venv && .venv/bin/pip install -r server/requirements-dev.txt
 .venv/bin/python -m pytest server/tests
 # also run one conversion through the real converter:
-SHELF_TEST_STL2STEP=/opt/stl2step/stl2step .venv/bin/python -m pytest server/tests
+SHELF_TEST_STL2STEP=/opt/cad-transmogrifier/transmogrify .venv/bin/python -m pytest server/tests
 ```
 
 ## Operating it

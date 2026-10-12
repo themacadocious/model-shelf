@@ -115,9 +115,15 @@ def authed_remote() -> str:
 
 # ------------------------------------------------------------------ repo set-up
 
+def _anycase(suffix: str) -> str:
+    """*.[sS][tT][eE][pP]: gitattributes patterns are case-sensitive, and sites
+    hand out Orin_case.STEP as readily as bracket.step."""
+    return "*." + "".join(f"[{c}{c.upper()}]" if c.isalpha() else c for c in suffix[1:])
+
+
 GITATTRIBUTES = "\n".join(
-    f"*{suf} filter=lfs diff=lfs merge=lfs -text" for suf in sorted(LFS_SUFFIXES)
-) + "\n*.STL filter=lfs diff=lfs merge=lfs -text\n*.3MF filter=lfs diff=lfs merge=lfs -text\n"
+    f"{_anycase(suf)} filter=lfs diff=lfs merge=lfs -text" for suf in sorted(LFS_SUFFIXES)
+) + "\n"
 
 TAXONOMY_SEED = {
     "tags": {
