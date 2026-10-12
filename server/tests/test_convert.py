@@ -48,6 +48,7 @@ def load_shelfd(tmp_path, monkeypatch, converter):
     if not remote.exists():
         run("git", "init", "-q", "--bare", "-b", "main", str(remote), cwd=tmp_path)
     monkeypatch.setenv("SHELF_REPO_URL", f"file://{remote}")
+    monkeypatch.setenv("SHELF_GIT_USER", "test")
     monkeypatch.setenv("SHELF_FORGEJO_TOKEN", "unused")
     monkeypatch.setenv("SHELF_API_TOKEN", TOKEN)
     monkeypatch.setenv("SHELF_WORKDIR", str(tmp_path / "work"))

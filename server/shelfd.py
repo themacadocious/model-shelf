@@ -27,8 +27,8 @@ from flask import Flask, jsonify, request, send_from_directory
 # ---------------------------------------------------------------- configuration
 
 WORKDIR = Path(os.environ.get("SHELF_WORKDIR", "/var/lib/shelfd/repo"))
-REPO_URL = os.environ["SHELF_REPO_URL"]            # https://git.../duckbill/model-shelf.git
-FORGEJO_USER = os.environ.get("SHELF_GIT_USER", "duckbill")
+REPO_URL = os.environ["SHELF_REPO_URL"]            # https://git.example.com/you/model-shelf.git
+FORGEJO_USER = os.environ["SHELF_GIT_USER"]        # who SHELF_FORGEJO_TOKEN belongs to
 FORGEJO_TOKEN = os.environ["SHELF_FORGEJO_TOKEN"]  # push credential
 API_TOKEN = os.environ["SHELF_API_TOKEN"]          # what the extension presents
 GIT_NAME = os.environ.get("SHELF_GIT_NAME", "model-shelf")
