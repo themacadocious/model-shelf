@@ -525,6 +525,7 @@ def lookup():
     mid = str(request.args.get("id", ""))
     with _git_lock:
         ensure_repo()
+        sync()  # the popup must see edits made outside shelfd
         d = find_existing(source, mid) if source and mid else None
         if not d:
             return jsonify(found=False)
@@ -659,6 +660,7 @@ def convertible_route():
     source, mid = request.args.get("source", ""), str(request.args.get("id", ""))
     with _git_lock:
         ensure_repo()
+        sync()  # the popup must see edits made outside shelfd
         d = find_existing(source, mid) if source and mid else None
         if not d:
             return jsonify(error="not found"), 404
