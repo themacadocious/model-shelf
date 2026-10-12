@@ -448,6 +448,9 @@ def run_stl2step(src: Path, out: Path) -> tuple[bool, str]:
     except OSError as exc:
         return False, f"could not run stl2step: {exc}"
     log = (p.stderr or "").strip()
+    if p.returncode == -9:  # SIGKILL: in practice the cgroup's memory limit
+        return False, ("killed, most likely out of memory: organic meshes can need "
+                       "several GB (see MemoryMax in the README)\n" + log[-400:])
     if p.returncode != 0 or not out.is_file() or not out.stat().st_size:
         return False, log[-600:] or f"stl2step exited {p.returncode}"
     return True, log[-600:]

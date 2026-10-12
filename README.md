@@ -111,6 +111,23 @@ is committed like any other save.
 It runs as a subprocess in its own venv, so OpenCASCADE never enters shelfd's.
 Install it outside `/home`: the unit file sets `ProtectHome=true`.
 
+OpenCASCADE needs the GL runtime even headless (`apt install libgl1 libegl1
+libxrender1 libxext6`, or the import fails on `libGL.so.1`).
+
+⚠️ **Memory.** A mechanical part needs about 0.5 GB, but an organic mesh can
+take several: a 33k-triangle figurine peaked at 5.4 GB. The converter runs
+inside shelfd's cgroup, so on a small or shared host cap it there. That way
+the kernel kills the conversion, not your Git server:
+
+```ini
+# /etc/systemd/system/shelfd.service.d/convert-limits.conf
+[Service]
+MemoryMax=1G
+MemorySwapMax=0
+Nice=10
+OOMPolicy=continue   # default "stop" takes shelfd down with the converter
+```
+
 ```bash
 git clone https://github.com/themacadocious/cad-transmogrifier.git /opt/cad-transmogrifier
 python3 -m venv /opt/cad-transmogrifier/.venv
